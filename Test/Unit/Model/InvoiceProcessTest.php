@@ -4,8 +4,10 @@ namespace Aune\AutoInvoice\Test\Unit\Model;
 
 use ArrayIterator;
 use Magento\Framework\DB\Transaction;
+use Magento\Framework\DB\TransactionFactory;
+use Magento\Sales\Model\Order\Email\Sender\InvoiceSender;
+use Psr\Log\LoggerInterface;
 use Magento\Sales\Model\Order;
-use Magento\Sales\Model\Order\Invoice as OrderInvoice;
 use Magento\Sales\Model\ResourceModel\Order\Collection as OrderCollection;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Magento\Sales\Model\ResourceModel\Order\Status\Collection as OrderStatusCollection;
@@ -26,32 +28,32 @@ use Aune\AutoInvoice\Model\InvoiceProcess;
 class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
 {
     /**
-     * @var HelperData|PHPUnit_Framework_MockObject_MockObject
+     * @var HelperData|\PHPUnit\Framework\MockObject\MockObject
      */
     private $helperDataMock;
     
     /**
-     * @var OrderCollectionFactory|PHPUnit_Framework_MockObject_MockObject
+     * @var OrderCollectionFactory|\PHPUnit\Framework\MockObject\MockObject
      */
     private $orderCollectionFactoryMock;
     
     /**
-     * @var OrderStatusCollectionFactory|PHPUnit_Framework_MockObject_MockObject
+     * @var OrderStatusCollectionFactory|\PHPUnit\Framework\MockObject\MockObject
      */
     private $orderStatusCollectionFactoryMock;
     
     /**
-     * @var InvoiceProcessItemInterfaceFactory|PHPUnit_Framework_MockObject_MockObject
+     * @var InvoiceProcessItemInterfaceFactory|\PHPUnit\Framework\MockObject\MockObject
      */
     private $invoiceProcessItemFactoryMock;
     
     /**
-     * @var Transaction|PHPUnit_Framework_MockObject_MockObject
+     * @var Transaction|\PHPUnit\Framework\MockObject\MockObject
      */
     private $transactionMock;
     
     /**
-     * @var InvoiceServiceFactory|PHPUnit_Framework_MockObject_MockObject
+     * @var InvoiceServiceFactory|\PHPUnit\Framework\MockObject\MockObject
      */
     private $invoiceServiceFactoryMock;
     
@@ -60,7 +62,7 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
      */
     private $invoiceProcess;
     
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->helperDataMock = $this->getMockBuilder(HelperData::class)
             ->disableOriginalConstructor()
@@ -72,12 +74,12 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
         
         $this->orderStatusCollectionFactoryMock = $this->getMockBuilder(OrderStatusCollectionFactory::class)
             ->disableOriginalConstructor()
-            ->setMethods(['create'])
+            ->onlyMethods(['create'])
             ->getMock();
         
         $this->invoiceProcessItemFactoryMock = $this->getMockBuilder(InvoiceProcessItemInterfaceFactory::class)
             ->disableOriginalConstructor()
-            ->setMethods(['create'])
+            ->onlyMethods(['create'])
             ->getMock();
         
         $this->transactionMock = $this->getMockBuilder(Transaction::class)
@@ -86,16 +88,26 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
 
         $this->invoiceServiceFactoryMock = $this->getMockBuilder(InvoiceServiceFactory::class)
             ->disableOriginalConstructor()
-            ->setMethods(['create'])
+            ->onlyMethods(['create'])
             ->getMock();
         
+        $transactionFactory = $this->getMockBuilder(TransactionFactory::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+        $transactionFactory->method('create')->willReturn($this->transactionMock);
+        $invoiceSender = $this->getMockBuilder(InvoiceSender::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+
         $this->invoiceProcess = new InvoiceProcess(
             $this->helperDataMock,
             $this->orderCollectionFactoryMock,
             $this->orderStatusCollectionFactoryMock,
             $this->invoiceProcessItemFactoryMock,
-            $this->transactionMock,
-            $this->invoiceServiceFactoryMock
+            $transactionFactory,
+            $this->invoiceServiceFactoryMock,
+            $invoiceSender,
+            $this->createMock(LoggerInterface::class)
         );
     }
 
@@ -124,6 +136,7 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
                 HelperData::RULE_SOURCE_STATUS => 'processing',
                 HelperData::RULE_PAYMENT_METHOD => HelperData::RULE_PAYMENT_METHOD_ALL,
                 HelperData::RULE_DESTINATION_STATUS => $dstStatus,
+                HelperData::RULE_EMAIL => '',
                 HelperData::RULE_CAPTURE_MODE => $captureMode,
             ]]);
         
@@ -153,7 +166,7 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
         
         $items = [];
         foreach ($orders as $order) {
-            $itemMock = $this->getMockForAbstractClass(InvoiceProcessItemInterface::class);
+            $itemMock = $this->createMock(InvoiceProcessItemInterface::class);
             
             $itemMock->expects(self::once())
                 ->method('setOrder')
@@ -175,7 +188,7 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
         
         $this->invoiceProcessItemFactoryMock->expects(self::exactly(count($items)))
             ->method('create')
-            ->willReturnOnConsecutiveCalls(...$items);
+            ->willReturn(...$items);
         
         $this->assertEquals(
             $this->invoiceProcess->getItemsToProcess(),
@@ -200,11 +213,13 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
                 HelperData::RULE_SOURCE_STATUS => $srcStatus,
                 HelperData::RULE_PAYMENT_METHOD => 'paypal',
                 HelperData::RULE_DESTINATION_STATUS => $dstStatusPaypal,
+                HelperData::RULE_EMAIL => '',
                 HelperData::RULE_CAPTURE_MODE => $captureModePaypal,
             ], [
                 HelperData::RULE_SOURCE_STATUS => $srcStatus,
                 HelperData::RULE_PAYMENT_METHOD => 'braintree',
                 HelperData::RULE_DESTINATION_STATUS => $dstStatusBraintree,
+                HelperData::RULE_EMAIL => '',
                 HelperData::RULE_CAPTURE_MODE => $captureModeBraintree,
             ]]);
         
@@ -237,13 +252,17 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
                 ->disableOriginalConstructor()
                 ->getMock();
             
+            $filters = [
+                ['status', ['eq' => $srcStatus]],
+                ['total_invoiced', ['null' => true]],
+            ];
             $orderCollectionMock->expects(self::exactly(2))
                 ->method('addFieldToFilter')
-                ->withConsecutive(
-                    ['status', ['eq' => $srcStatus]],
-                    ['total_invoiced', ['null' => true]]
-                )
-                ->willReturnOnConsecutiveCalls($orderCollectionMock, $orderCollectionMock);
+                ->willReturnCallback(function ($field, $condition) use ($filters, $orderCollectionMock) {
+                    static $filterIndex = 0;
+                    self::assertSame($filters[$filterIndex++], [$field, $condition]);
+                    return $orderCollectionMock;
+                });
             
             $orderCollectionMock->expects(self::once())
                 ->method('getIterator')
@@ -252,7 +271,7 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
             $orderCollectionMocks []= $orderCollectionMock;
             
             foreach ($orders as $order) {
-                $itemMock = $this->getMockForAbstractClass(InvoiceProcessItemInterface::class);
+                $itemMock = $this->createMock(InvoiceProcessItemInterface::class);
                 $itemMock->expects(self::once())
                     ->method('setOrder')
                     ->with($order)
@@ -274,11 +293,11 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
         
         $this->orderCollectionFactoryMock->expects(self::exactly(count($orderCollectionMocks)))
             ->method('create')
-            ->willReturnOnConsecutiveCalls(...$orderCollectionMocks);
+            ->willReturn(...$orderCollectionMocks);
         
         $this->invoiceProcessItemFactoryMock->expects(self::exactly(count($items)))
             ->method('create')
-            ->willReturnOnConsecutiveCalls(...$items);
+            ->willReturn(...$items);
         
         $this->assertEquals(
             $this->invoiceProcess->getItemsToProcess(),
@@ -291,30 +310,26 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
      */
     private function getOrderMock(int $orderId, string $paymentMethod)
     {
-        $methodInstanceMock = $this->getMockForAbstractClass(\Magento\Payment\Model\MethodInterface::class);
+        $methodInstanceMock = $this->createMock(\Magento\Payment\Model\MethodInterface::class);
         
-        $methodInstanceMock->expects(self::any())
-            ->method('getCode')
+        $methodInstanceMock->method('getCode')
             ->willReturn($paymentMethod);
         
         $paymentMock = $this->getMockBuilder(\Magento\Sales\Model\Order\Payment::class)
             ->disableOriginalConstructor()
             ->getMock();
         
-        $paymentMock->expects(self::any())
-            ->method('getMethodInstance')
+        $paymentMock->method('getMethodInstance')
             ->willReturn($methodInstanceMock);
         
         $orderMock = $this->getMockBuilder(Order::class)
             ->disableOriginalConstructor()
             ->getMock();
         
-        $orderMock->expects(self::any())
-            ->method('getId')
+        $orderMock->method('getId')
             ->willReturn($orderId);
         
-        $orderMock->expects(self::any())
-            ->method('getPayment')
+        $orderMock->method('getPayment')
             ->willReturn($paymentMock);
         
         return $orderMock;
@@ -355,6 +370,8 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
             ->disableOriginalConstructor()
             ->getMock();
         
+        $orderMock->method('getStatus')->willReturn($status);
+
         $orderMock->expects(self::once())
             ->method('setStatus')
             ->with($status)
@@ -365,13 +382,13 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
             ->with($status)
             ->willReturn($orderMock);
         
-        $itemMock = $this->getMockForAbstractClass(InvoiceProcessItemInterface::class);
+        $itemMock = $this->createMock(InvoiceProcessItemInterface::class);
         
         $itemMock->expects(self::once())
             ->method('getOrder')
             ->willReturn($orderMock);
         
-        $itemMock->expects(self::once())
+        $itemMock->expects(self::exactly(2))
             ->method('getDestinationStatus')
             ->willReturn($status);
         
@@ -379,9 +396,9 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
             ->method('getCaptureMode')
             ->willReturn($captureMode);
         
-        $invoiceMock = $this->getMockBuilder(OrderInvoice::class)
+        $invoiceMock = $this->getMockBuilder(InvoiceStub::class)
             ->disableOriginalConstructor()
-            ->setMethods(['setRequestedCaptureCase', 'register'])
+            ->onlyMethods(['setRequestedCaptureCase', 'register'])
             ->getMock();
         
         $invoiceServiceMock = $this->getMockBuilder(InvoiceService::class)
@@ -449,6 +466,8 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
             ->disableOriginalConstructor()
             ->getMock();
         
+        $orderMock->method('getStatus')->willReturn($status);
+
         $orderMock->expects(self::once())
             ->method('setStatus')
             ->with($status)
@@ -459,13 +478,13 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
             ->with($status)
             ->willReturn($orderMock);
         
-        $itemMock = $this->getMockForAbstractClass(InvoiceProcessItemInterface::class);
+        $itemMock = $this->createMock(InvoiceProcessItemInterface::class);
         
         $itemMock->expects(self::once())
             ->method('getOrder')
             ->willReturn($orderMock);
         
-        $itemMock->expects(self::once())
+        $itemMock->expects(self::exactly(2))
             ->method('getDestinationStatus')
             ->willReturn($status);
         
@@ -473,9 +492,9 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
             ->method('getCaptureMode')
             ->willReturn($captureMode);
         
-        $invoiceMock = $this->getMockBuilder(OrderInvoice::class)
+        $invoiceMock = $this->getMockBuilder(InvoiceStub::class)
             ->disableOriginalConstructor()
-            ->setMethods(['setRequestedCaptureCase', 'register'])
+            ->onlyMethods(['setRequestedCaptureCase', 'register'])
             ->getMock();
         
         $invoiceServiceMock = $this->getMockBuilder(InvoiceService::class)
@@ -513,9 +532,9 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
      */
     private function getOrderStatusMock(string $status, string $state)
     {
-        $orderStatusMock = $this->getMockBuilder(\Magento\Sales\Model\Order\Status::class)
+        $orderStatusMock = $this->getMockBuilder(OrderStatusStub::class)
             ->disableOriginalConstructor()
-            ->setMethods(['getStatus', 'getState'])
+            ->onlyMethods(['getStatus', 'getState'])
             ->getMock();
         
         $orderStatusMock->expects(self::once())

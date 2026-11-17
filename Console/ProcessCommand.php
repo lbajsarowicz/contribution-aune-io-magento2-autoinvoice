@@ -10,6 +10,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use Magento\Framework\App\State;
+use Magento\Framework\Console\Cli;
 use Aune\AutoInvoice\Api\InvoiceProcessInterfaceFactory;
 
 class ProcessCommand extends Command
@@ -78,7 +79,7 @@ class ProcessCommand extends Command
      * @param InputInterface $input
      * @param OutputInterface $output
      * @throws \Exception
-     * @return void
+     * @return int
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
@@ -125,6 +126,6 @@ class ProcessCommand extends Command
 
         $output->writeln('<fg=green>Auto invoice procedure completed.</>');
 
-        return Command::SUCCESS;
+        return Cli::RETURN_SUCCESS;
     }
 }
