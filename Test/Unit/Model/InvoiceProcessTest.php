@@ -182,6 +182,11 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
                 ->method('setCaptureMode')
                 ->with($captureMode)
                 ->willReturn($itemMock);
+
+            $itemMock->expects(self::once())
+                ->method('setEmail')
+                ->with('')
+                ->willReturn($itemMock);
             
             $items[$order->getId()] = $itemMock;
         }
@@ -285,6 +290,11 @@ class InvoiceProcessTest extends \PHPUnit\Framework\TestCase
                 $itemMock->expects(self::once())
                     ->method('setCaptureMode')
                     ->with($captureMode)
+                    ->willReturn($itemMock);
+
+                $itemMock->expects(self::once())
+                    ->method('setEmail')
+                    ->with('')
                     ->willReturn($itemMock);
                 
                 $items[$order->getId()] = $itemMock;
