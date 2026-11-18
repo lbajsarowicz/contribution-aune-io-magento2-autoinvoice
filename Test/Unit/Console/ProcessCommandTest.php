@@ -9,6 +9,7 @@ use Magento\Framework\App\State;
 use Magento\Sales\Model\Order;
 use Aune\AutoInvoice\Api\Data\InvoiceProcessItemInterface;
 use Aune\AutoInvoice\Api\InvoiceProcessInterface;
+use Aune\AutoInvoice\Api\InvoiceProcessInterfaceFactory;
 use Aune\AutoInvoice\Console\ProcessCommand;
 
 /**
@@ -17,17 +18,17 @@ use Aune\AutoInvoice\Console\ProcessCommand;
 class ProcessCommandTest extends \PHPUnit\Framework\TestCase
 {
     /**
-     * @var State|PHPUnit_Framework_MockObject_MockObject
+     * @var State|\PHPUnit\Framework\MockObject\MockObject
      */
     private $stateMock;
     
     /**
-     * @var LoggerInterface|PHPUnit_Framework_MockObject_MockObject
+     * @var LoggerInterface|\PHPUnit\Framework\MockObject\MockObject
      */
     private $loggerMock;
     
     /**
-     * @var InvoiceProcessInterface|PHPUnit_Framework_MockObject_MockObject
+     * @var InvoiceProcessInterface|\PHPUnit\Framework\MockObject\MockObject
      */
     private $invoiceProcessMock;
     
@@ -36,19 +37,24 @@ class ProcessCommandTest extends \PHPUnit\Framework\TestCase
      */
     private $processCommand;
     
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->stateMock = $this->getMockBuilder(State::class)
             ->disableOriginalConstructor()
             ->getMock();
 
-        $this->loggerMock = $this->getMockForAbstractClass(LoggerInterface::class);
-        $this->invoiceProcessMock = $this->getMockForAbstractClass(InvoiceProcessInterface::class);
+        $this->loggerMock = $this->createMock(LoggerInterface::class);
+        $this->invoiceProcessMock = $this->createMock(InvoiceProcessInterface::class);
         
+        $invoiceProcessFactory = $this->getMockBuilder(InvoiceProcessInterfaceFactory::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+        $invoiceProcessFactory->method('create')->willReturn($this->invoiceProcessMock);
+
         $this->processCommand = new ProcessCommand(
             $this->stateMock,
             $this->loggerMock,
-            $this->invoiceProcessMock
+            $invoiceProcessFactory
         );
     }
     
@@ -92,9 +98,8 @@ class ProcessCommandTest extends \PHPUnit\Framework\TestCase
                 ->disableOriginalConstructor()
                 ->getMock();
             
-            $itemMock = $this->getMockForAbstractClass(InvoiceProcessItemInterface::class);
-            $itemMock->expects(self::any())
-                ->method('getOrder')
+            $itemMock = $this->createMock(InvoiceProcessItemInterface::class);
+            $itemMock->method('getOrder')
                 ->willReturn($orderMock);
             
             $itemMocks []= $itemMock;
@@ -134,9 +139,8 @@ class ProcessCommandTest extends \PHPUnit\Framework\TestCase
                 ->disableOriginalConstructor()
                 ->getMock();
             
-            $itemMock = $this->getMockForAbstractClass(InvoiceProcessItemInterface::class);
-            $itemMock->expects(self::any())
-                ->method('getOrder')
+            $itemMock = $this->createMock(InvoiceProcessItemInterface::class);
+            $itemMock->method('getOrder')
                 ->willReturn($orderMock);
             
             $itemMocks []= $itemMock;

@@ -13,7 +13,7 @@ class InvoiceProcessItemTest extends \PHPUnit\Framework\TestCase
      */
     private $invoiceProcessItem;
 
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->invoiceProcessItem = new InvoiceProcessItem();
     }
@@ -32,8 +32,13 @@ class InvoiceProcessItemTest extends \PHPUnit\Framework\TestCase
     /**
      * @dataProvider getFieldsDataProvider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('getFieldsDataProvider')]
     public function testGettersAndSetters($field, $getter, $setter, $value)
     {
+        if ($field === InvoiceProcessItemInterface::KEY_ORDER) {
+            $value = $this->getMockBuilder(Order::class)->disableOriginalConstructor()->getMock();
+        }
+
         $this->assertEquals(
             $this->invoiceProcessItem->$setter($value),
             $this->invoiceProcessItem
@@ -53,14 +58,10 @@ class InvoiceProcessItemTest extends \PHPUnit\Framework\TestCase
     /**
      * @return array
      */
-    public function getFieldsDataProvider()
+    public static function getFieldsDataProvider()
     {
-        $orderMock = $this->getMockBuilder(Order::class)
-            ->disableOriginalConstructor()
-            ->getMock();
-
         return [
-            ['field' => InvoiceProcessItemInterface::KEY_ORDER, 'getter' => 'getOrder', 'setter' => 'setOrder', 'value' => $orderMock],
+            ['field' => InvoiceProcessItemInterface::KEY_ORDER, 'getter' => 'getOrder', 'setter' => 'setOrder', 'value' => null],
             ['field' => InvoiceProcessItemInterface::KEY_DESTINATION_STATUS, 'getter' => 'getDestinationStatus', 'setter' => 'setDestinationStatus', 'value' => 'complete'],
         ];
     }
